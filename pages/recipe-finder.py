@@ -178,6 +178,11 @@ search_query = st.text_input(
     label_visibility="collapsed"
 )
 
+# INPUT VALIDATION 1: validating search
+if search_query and search_query.strip() == "":
+    st.warning("⚠️ Please enter a valid search term.")
+    st.stop()
+
 api_results = None
 api_status = None
 
@@ -217,20 +222,20 @@ with col5:
 st.caption(f"Active filter: **{st.session_state.recipe_filter}**")
 
 # Layout primitive: st.columns for category filter buttons + sort
-col1, col2, col3, col4, col5 = st.columns(5)
-for col, label in zip([col1, col2, col3, col4], ["All", "Breakfast", "Lunch", "Dinner"]):
-    with col:
-        if st.button(label, key=f"cat_{label}"):  # key required: unique per button to avoid collisions
-            st.session_state.recipe_filter = label
-            st.rerun()
+#col1, col2, col3, col4, col5 = st.columns(5)
+#for col, label in zip([col1, col2, col3, col4], ["All", "Breakfast", "Lunch", "Dinner"]):
+    #with col:
+       #if st.button(label, key=f"cat_{label}"):  # key required: unique per button to avoid collisions
+           # st.session_state.recipe_filter = label
+           # st.rerun()
 
-with col5:
+#with col5:
     # Widget 2: sort selectbox
-    sort_by = st.selectbox(
-        "Sort", ["Rating ↓", "Calories ↑", "Prep Time ↑"],
-        key="sort_sel",  # key required: reset callback restores this widget by key
-        label_visibility="collapsed"
-    )
+   # sort_by = st.selectbox(
+      #  "Sort", ["Rating ↓", "Calories ↑", "Prep Time ↑"],
+      #  key="sort_sel",  # key required: reset callback restores this widget by key
+      #  label_visibility="collapsed"
+  #  )
 
 # Reset button using on_click callback
 col_reset, _ = st.columns([1, 3])
@@ -245,6 +250,11 @@ if st.session_state.recipe_filter != "All":
     filtered = filtered[filtered["Category"] == st.session_state.recipe_filter]
 if search_query:
     filtered = filtered[filtered["Name"].str.contains(search_query, case=False, na=False)]
+
+# INPUT VALIDATION #2: empty filter result 
+if filtered.empty:
+    st.warning("⚠️ No recipes match this filter. Try selecting a different category.")
+    st.stop()
 
 # Apply sort
 sort_map = {
@@ -318,6 +328,11 @@ if show_advanced:
         st.session_state.get("cal_range_slider", (cal_min, cal_max)),
         key="cal_range_slider"  # key required: reset callback clears this by key
     )
+    # INPUT VALIDATION #3: invalid range check (safeguard) 
+    if cal_range[0] >= cal_range[1]:
+        st.error("⚠️ Invalid calorie range selected (minimum must be less than maximum.")
+        st.stop()
+    
 
     # Widget 4: max prep time slider — only visible in advanced mode
     max_prep = st.slider("Max prep time (min)", 5, 60, 60, key="adv_max_prep_slider")
@@ -342,34 +357,54 @@ if show_advanced:
     st.caption("Bubble size = Rating · Color = Category · Updates with your active filters")
 
     viz_df = cal_filtered if not cal_filtered.empty else filtered
+    
+    # INPUT VALIDATION 4: data completeness
+    required_cols = ["Calories", "Prep Time (min)", "Rating"]
+    if viz_df[required_cols].isnull().any().any():
+        st.warning("⚠️ Some recipes are missing data required for the graph.")
+        st.stop()
+    
+    # INPUT VALIDATION 5: graph data validation - minimum data requirement
+    if len(viz_df) < 2:
+        st.warning("⚠️ Not enough data to display graph (need at least 2 recipes). Adjust filters.")
+        st.stop()
 
-    if not viz_df.empty:
-        fig = px.scatter(
-            viz_df,
-            x="Prep Time (min)",
-            y="Calories",
-            color="Category",
-            size="Rating",
-            text="Name",
-            hover_data={"Name": True, "Calories": True, "Prep Time (min)": True, "Rating": True},
-            color_discrete_map={"Breakfast": "#e8a87c", "Lunch": "#7a9e7e", "Dinner": "#4a7a50"},
-            size_max=22,
-            title="",
-        )
-        fig.update_traces(textposition="top center", textfont_size=9)
-        fig.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="#d4e0d2",
-            font_family="Nunito, sans-serif",
-            legend_title_text="Meal Type",
-            xaxis_title="Prep Time (minutes)",
-            yaxis_title="Calories",
-            margin=dict(l=10, r=10, t=10, b=10),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-else:
-    # Provide a sensible default so downstream code that references cal_range still works
-    cal_range = (int(df["Calories"].min()), int(df["Calories"].max()))
+    fig = px.scatter(
+        viz_df,
+        x="Prep Time (min)",
+        y="Calories",
+        color="Category",
+        size="Rating",
+        text="Name",
+        hover_data={
+            "Name": True,
+            "Calories": True,
+            "Prep Time (min)": True,
+            "Rating": True
+        },
+        color_discrete_map={
+            "Breakfast": "#e8a87c",
+            "Lunch": "#7a9e7e",
+            "Dinner": "#4a7a50"
+        },
+        size_max=22,
+        title="",
+    )
+
+    fig.update_traces(textposition="top center", textfont_size=9)
+
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#d4e0d2",
+        font_family="Nunito, sans-serif",
+        legend_title_text="Meal Type",
+        xaxis_title="Prep Time (minutes)",
+        yaxis_title="Calories",
+        margin=dict(l=10, r=10, t=10, b=10),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
 
 # DYNAMIC UI #2 + DEPENDENT DROPDOWNS: Add-to-Plan panel
 # The specific-recipe dropdown only appears AFTER the user picks a meal category
