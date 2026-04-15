@@ -9,6 +9,8 @@ st.set_page_config(page_title="Recipe Finder | Hoos Hungry?", layout="centered",
 # Session state defaults 
 if "recipe_filter" not in st.session_state:
     st.session_state.recipe_filter = "All"
+if "notifications_on" not in st.session_state:
+    st.session_state.notifications_on = False
 if "cal_range" not in st.session_state:
     st.session_state.cal_range = (200, 750)
 if "search_query" not in st.session_state:
@@ -160,6 +162,8 @@ def reset_all_filters():
     st.session_state.show_advanced = False
     st.session_state.selected_category_dep = "All"
     st.session_state.selected_recipe_dep = None
+    # USER FEEDBACK #1: Filters cleared 
+    st.toast("✅ Filters cleared!", icon = "🔄")
 
 # Callback: on_change for dependent dropdown
 # on_change is needed here to clear the child dropdown selection whenever the parent category changes 
@@ -187,11 +191,13 @@ api_results = None
 api_status = None
 
 if search_query:
-    api_results, api_status = search_recipes(
-        search_query,
-        st.session_state.recipe_filter,
-        120
-    )
+    # USER FEEDBACK #2: API call feedback 
+    with st.spinner("Searching Spoonacular for recipes..."):
+        api_results, api_status = search_recipes(
+            search_query,
+            st.session_state.recipe_filter,
+            120
+        )
 
     if api_status == "ok":
         st.write(f"✅ API call worked. Found {len(api_results)} recipe(s) from Spoonacular.")
@@ -208,11 +214,26 @@ if search_query:
 
 # Layout primitive: st.columns for category filter buttons + sort
 col1, col2, col3, col4, col5 = st.columns(5)
+
+# USER FEEDBACK #3: Showing status of all filters
+toast_map = {
+    "All": ("🍽️ Showing all recipes", "📋"),
+    "Breakfast": ("🥞 Showing breakfast recipes", "🌅"),
+    "Lunch": ("🥗 Showing lunch recipes", "☀️"),
+    "Dinner": ("🍛 Showing dinner recipes", "🌙"),
+}
+
 for col, label in zip([col1, col2, col3, col4], ["All", "Breakfast", "Lunch", "Dinner"]):
     with col:
         if st.button(label, key=f"cat_{label}"):
             st.session_state.recipe_filter = label
+            st.session_state.toast_msg = toast_map[label]
             st.rerun()
+
+if "toast_msg" in st.session_state:
+    msg, icon = st.session_state.toast_msg
+    st.toast(msg, icon=icon)
+    del st.session_state.toast_msg
 
 with col5:
     # Widget 2: sort selectbox
@@ -265,6 +286,13 @@ sort_map = {
 sort_col, sort_asc = sort_map[sort_by]
 filtered = filtered.sort_values(sort_col, ascending=sort_asc)
 
+# USER FEEDBACK 4: Live filter summary 
+st.info(
+    f"📊 Showing **{len(filtered)} recipes** | "
+    f"Category: **{st.session_state.recipe_filter}** | "
+    f"Sorted by: **{sort_by}**"
+)
+
 # Show API results when available
 if search_query and api_status == "ok" and api_results:
     st.subheader("🍽️ Spoonacular Results")
@@ -276,8 +304,8 @@ if search_query and api_status == "ok" and api_results:
 # Feedback messages 
 if search_query:
     st.info(f"🔍 Results for **\"{search_query}\"** — {len(filtered)} recipe(s) from local database found.")
-elif st.session_state.recipe_filter != "All":
-    st.info(f"📂 Showing **{st.session_state.recipe_filter}** — {len(filtered)} recipes.")
+#elif st.session_state.recipe_filter != "All":
+    #st.info(f"📂 Showing **{st.session_state.recipe_filter}** — {len(filtered)} recipes.")
 else:
     st.caption(f"{len(filtered)} recipes available")
 
@@ -421,7 +449,7 @@ selected_category = st.selectbox(
     key="selected_category_dep",   # key required: on_change callback reads this by key
     on_change=on_category_change   # clears child selection when parent changes
 )
-
+    
 # Build child options based on parent selection
 if selected_category == "All":
     child_options = df["Name"].tolist()
